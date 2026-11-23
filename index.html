@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'; base-uri 'none'">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Robocopy Lite</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="renderer.js" defer></script>
+  <script src="log-page.js" defer></script>
+</head>
+<body>
+  <main>
+    <header class="hero">
+      <img class="hero-icon" src="sync.png" alt="">
+      <div class="heading"><p>ROBOCOPY LITE</p><h1 id="page-title">同步任务</h1></div>
+      <button id="tasks-button" type="button" hidden>返回任务</button>
+      <button id="logs-button" type="button">日志</button>
+      <button id="settings-button" type="button">设置</button>
+      <button id="new-job" class="primary" type="button">＋ 新建任务</button>
+    </header>
+    <p id="global-error" class="notice" role="status" hidden></p>
+    <section id="tasks-page" aria-labelledby="tasks-heading">
+        <div class="section-heading"><h2 id="tasks-heading">任务列表</h2><span id="running-count" class="count"></span></div>
+        <p id="scan-status" class="notice" role="status" hidden></p>
+        <div id="task-list" class="stack"></div>
+        <div id="tasks-empty" class="empty prominent">暂无任务。新建一个任务，选择两个文件夹即可开始。</div>
+    </section>
+    <section id="logs-page" aria-label="运行日志" hidden>
+      <div class="log-filters">
+        <label>任务 <select id="log-task"><option value="">所有任务</option></select></label>
+        <label>状态 <select id="log-status">
+          <option value="">全部状态</option><option value="errors">有问题</option><option value="active">运行中</option>
+          <option value="done">已完成</option><option value="stopped">已停止</option>
+        </select></label>
+        <label>搜索 <input id="log-search" type="search" placeholder="任务、文件路径或错误"></label>
+        <button id="open-logs-folder" type="button">打开日志文件夹</button>
+      </div>
+      <div class="log-layout">
+        <div>
+          <div class="section-heading"><h2>运行记录</h2><span id="log-count" class="count"></span></div>
+          <div id="log-records" class="stack"></div>
+          <p id="logs-empty" class="empty">暂无符合条件的记录。</p>
+        </div>
+        <article id="log-detail" class="card" aria-label="选中日志">
+          <h2 id="log-title">日志详情</h2>
+          <p id="log-summary" class="hint">选择一条记录，查看出错位置和 Robocopy 输出。</p>
+          <div id="log-paths"></div>
+          <p id="log-last-file" class="hint log-path" hidden></p>
+          <p id="log-error" class="notice" hidden></p>
+          <pre id="log-output" class="diagnostic-output" tabindex="0" hidden></pre>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="job-form">
+    <form id="backup-form">
+      <header class="modal-header"><h2 id="form-title">新建任务</h2><button class="icon" id="close-form" type="button" aria-label="关闭">×</button></header>
+      <div class="fields">
+        <p id="adopt-note" class="notice" hidden></p>
+        <label for="name">任务名称</label>
+        <input class="full" name="name" id="name" required placeholder="例如 下载盘备份" maxlength="100">
+        <label for="mode">同步模式</label>
+        <select class="full" name="mode" id="mode">
+          <option value="one">单向同步 · 累计备份</option>
+          <option value="two">双向同步</option>
+        </select>
+        <p id="mode-hint" class="hint"></p>
+        <label for="source" id="source-label">源文件夹</label>
+        <div class="path-input"><input id="source" name="source" required placeholder="例如 C:\资料" spellcheck="false"><button type="button" data-browse="source">浏览</button></div>
+        <label for="target" id="target-label">备份文件夹</label>
+        <div class="path-input"><input id="target" name="target" required placeholder="例如 D:\备份" spellcheck="false"><button type="button" data-browse="target">浏览</button></div>
+        <p id="path-change" class="notice" hidden></p>
+        <details id="advanced">
+          <summary>高级设置</summary>
+          <div class="advanced">
+            <label class="check"><input name="resume" type="checkbox" checked> 启用 Robocopy 断点续传</label>
+            <label>复制速度<select name="speed"><option value="normal">正常</option><option value="low">降低速度</option></select></label>
+            <label>排除文件<textarea name="excludeFiles" rows="2" placeholder="每行一条，例如 *.tmp"></textarea></label>
+            <label>排除文件夹<textarea name="excludeDirs" rows="2" placeholder="每行一条，例如 cache"></textarea></label>
+          </div>
+        </details>
+        <p id="form-feedback" class="notice" role="status" hidden></p>
+      </div>
+      <footer class="modal-actions"><button id="save-only" type="button">保存</button><button id="save-start" type="submit" class="primary">保存并开始</button></footer>
+    </form>
+  </dialog>
+
+  <dialog id="job-detail">
+    <header class="modal-header"><h2 id="detail-title">任务详情</h2><button class="icon" id="close-detail" type="button" aria-label="关闭">×</button></header>
+    <div class="fields">
+      <p id="detail-status" class="detail-state"></p>
+      <div id="detail-paths"></div>
+      <p id="detail-error" class="notice" role="status" hidden></p>
+      <section id="conflict-section" hidden><h3>待处理的同名文件</h3><div id="conflicts" class="stack"></div></section>
+      <section class="detail-block"><h3>执行记录</h3><div id="history" class="stack"></div></section>
+      <section id="log-section" class="detail-block" hidden><h3>日志</h3><pre id="detail-log"></pre></section>
+    </div>
+    <footer class="modal-actions"><button id="preview" type="button">预览</button><button id="delete-task" type="button" class="danger">取消并删除任务</button></footer>
+  </dialog>
+
+  <dialog id="settings-dialog">
+    <form id="settings-form">
+      <header class="modal-header"><h2>应用设置</h2><button class="icon" id="close-settings" type="button" aria-label="关闭">×</button></header>
+      <div class="fields settings-fields">
+        <label><input name="autoStart" type="checkbox"> 登录 Windows 后启动</label>
+        <label><input name="tray" type="checkbox"> 关闭窗口时留在系统托盘</label>
+        <label><input name="notifications" type="checkbox"> 同步出错或盘符断开时显示通知</label>
+        <p id="settings-error" class="notice" role="status" hidden></p>
+      </div>
+      <footer class="modal-actions"><button class="primary" type="submit">保存设置</button></footer>
+    </form>
+  </dialog>
+</body>
+</html>

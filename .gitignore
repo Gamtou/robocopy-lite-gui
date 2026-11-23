@@ -1,0 +1,4 @@
+node_modules/
+.npm-cache/
+dist/
+/robocopy_studio_lite.py
