@@ -107,15 +107,36 @@
     return [list];
   }
 
+  function displayDiagnosis(report) {
+    const container = $('log-diagnosis');
+    const issues = report?.issues ?? [];
+    container.hidden = !issues.length;
+    container.replaceChildren(...issues.map(issue => {
+      const section = node('div', '', 'diagnosis-group');
+      const count = issue.files ? ' · ' + issue.files + ' 条路径' : '';
+      section.append(node('strong', 'Windows 错误 ' + issue.code + ' · ' + issue.reason + count));
+      const paths = node('ul');
+      for (const example of issue.examples) paths.append(node('li', [example.operation, example.file].filter(Boolean).join(' · ')));
+      if (issue.examples.length) section.append(paths);
+      if (issue.files > issue.examples.length) section.append(node('p', '其余路径见完整日志。', 'hint'));
+      return section;
+    }));
+    if (issues.length) field('log-error', report.summary);
+  }
+
   async function output(entry) {
     if (!entry || entry.kind === 'event') {
       field('log-output', '');
+      displayDiagnosis(null);
       outputRequest++;
       loadedOutput = '';
       return;
     }
     const key = entry.id + '|' + entry.state;
-    if (key !== loadedOutput) field('log-output', '正在读取日志…');
+    if (key !== loadedOutput) {
+      field('log-output', '正在读取日志…');
+      displayDiagnosis(entry.diagnosis);
+    }
     else if (!active(entry)) return;
     const request = ++outputRequest;
     try {
@@ -124,6 +145,10 @@
       loadedOutput = key;
       const readable = content.split(/[\r\n]+/).filter(line => !/^\s*\d{1,3}(?:[.,]\d+)?\s*%\s*$/.test(line)).join('\n');
       field('log-output', readable || '这条记录暂时没有可读的 Robocopy 输出。');
+      if (entry.state === 'error' && !entry.diagnosis) {
+        const report = await api.diagnosticReport(entry.id).catch(() => null);
+        if (request === outputRequest && !page.hidden) displayDiagnosis(report);
+      }
     } catch (error) {
       if (request === outputRequest) field('log-output', error.message);
     }

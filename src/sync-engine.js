@@ -46,7 +46,9 @@ async function runCopy(args, signal, onChild) {
   try {
     const [code] = await once(child, 'close');
     signal.throwIfAborted();
-    if (code === null || code < 0 || code >= 8) throw new Error('Robocopy 复制失败，退出码：' + code);
+    if (code === null || code < 0 || code >= 8) {
+      throw Object.assign(new Error('Robocopy 复制失败，退出码：' + code), { robocopy: true, exitCode: code });
+    }
     return code;
   } finally {
     onChild(null);
@@ -72,7 +74,7 @@ async function fingerprint(file, cached, signal) {
   if (stamp !== fileStamp(await fs.lstat(file, { bigint: true }))) {
     throw Object.assign(new Error('读取期间文件发生变动'), { changed: true });
   }
-  return { stamp, hash: digest.digest('hex') };
+  return { stamp, hash: digest.digest('hex'), bytes: Number(info.size) };
 }
 
 function matcher(patterns) {
@@ -85,8 +87,9 @@ async function inventory(root, config, cache, signal) {
   const files = new Map();
   const directories = new Map();
   const unstable = new Set();
-  const skipFile = matcher(config.excludeFiles);
-  const skipDir = matcher(config.excludeDirs);
+  const rules = backup.effectiveExclusions(config);
+  const skipFile = matcher(rules.files);
+  const skipDir = matcher(rules.directories);
   async function visit(folder, relative) {
     signal.throwIfAborted();
     for await (const entry of await fs.opendir(folder)) {
@@ -149,7 +152,8 @@ async function transfer(context, from, source, targetName, before) {
   const targetRoot = from === 0 ? config.target : config.source;
   const original = path.join(sourceRoot, source.name);
   const destination = path.join(targetRoot, targetName);
-  report?.({ stage: 'copying', file: original, filePercent: null });
+  report?.({ stage: 'copying', file: original, filePercent: null, fileBytes: source.bytes,
+    fileTransferred: 0, speed: undefined, speedAt: undefined });
   const parent = path.dirname(destination);
   await verifyRoots(config, roots.map(root => root.identity));
   await assureFolder(sourceRoot, path.dirname(original), roots[from].key, false);
@@ -168,9 +172,13 @@ async function transfer(context, from, source, targetName, before) {
     if (config.resume) args.push('/Z');
     if (config.speed === 'low') args.push('/IPG:25');
     const offset = (await fs.stat(logPath)).size;
+    const rate = progress.rateTracker();
     const stopProgress = progress.monitorLog(logPath, offset, line => {
       const update = progress.logEntry(line);
-      if (update?.percent != null) report?.({ filePercent: update.percent });
+      if (update?.percent != null) {
+        const fileTransferred = (source.bytes || 0) * update.percent / 100;
+        report?.({ filePercent: update.percent, fileTransferred, ...rate(fileTransferred) });
+      }
     });
     try { await runCopy(args, signal, onChild); }
     finally { await stopProgress(); }
@@ -228,7 +236,17 @@ async function syncBoth(context) {
   ]);
   for (const [index, view] of inventories.entries()) cache[index] = view.files;
   const [first, second] = inventories;
-  const keys = new Set([...first.files.keys(), ...second.files.keys(), ...[...baseline.keys()].filter(key => !key.startsWith(dirMarker)),
+  const rules = backup.effectiveExclusions(config);
+  const skipFile = matcher(rules.files);
+  const skipDir = matcher(rules.directories);
+  function excluded(key, directory) {
+    const parts = key.split(path.sep);
+    const folderCount = directory ? parts.length : parts.length - 1;
+    return parts.slice(0, folderCount).some((name, index) => skipDir(name, parts.slice(0, index + 1).join(path.sep))) ||
+      (!directory && skipFile(parts.at(-1), key));
+  }
+  const keys = new Set([...first.files.keys(), ...second.files.keys(),
+    ...[...baseline.keys()].filter(key => !key.startsWith(dirMarker) && !excluded(key, false)),
     ...first.unstable, ...second.unstable]);
   const directories = new Set([...first.directories.keys(), ...second.directories.keys()]);
   const total = keys.size + directories.size;
@@ -320,7 +338,7 @@ async function syncBoth(context) {
   for (const key of baseline.keys()) {
     if (!key.startsWith(dirMarker)) continue;
     const relative = key.slice(dirMarker.length);
-    if (!first.directories.has(relative) && !second.directories.has(relative)) baseline.delete(key);
+    if (!excluded(relative, true) && !first.directories.has(relative) && !second.directories.has(relative)) baseline.delete(key);
   }
   return { conflicts, deferred, copies };
 }
@@ -344,7 +362,8 @@ async function syncOnce(context) {
   } finally {
     await fs.unlink(planFile).catch(() => {});
   }
-  report?.({ stage: 'copying', overall: plan?.count ? 0 : null, totalBytes: plan?.bytes, transferred: 0 });
+  report?.({ stage: 'copying', overall: plan?.count ? 0 : null, totalBytes: plan?.bytes, transferred: 0,
+    processed: 0, totalFiles: plan?.count });
   const receive = progress.singleReporter(plan, config.source, state => report?.(state));
   const stopProgress = progress.monitorLog(logPath, 0, receive);
   let code;

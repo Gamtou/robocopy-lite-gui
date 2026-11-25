@@ -17,5 +17,6 @@ contextBridge.exposeInMainWorld('backup', {
   log: (id, runId) => ipcRenderer.invoke('log', id, runId),
   logsSnapshot: () => ipcRenderer.invoke('logs-snapshot'),
   diagnosticLog: id => ipcRenderer.invoke('diagnostic-log', id),
+  diagnosticReport: id => ipcRenderer.invoke('diagnostic-report', id),
   openLogsFolder: () => ipcRenderer.invoke('open-logs-folder'),
 });

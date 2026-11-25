@@ -6,6 +6,7 @@ const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const backup = require('./backup');
 const engine = require('./sync-engine');
+const { readFailure } = require('./diagnostics');
 
 const settleMs = 2200;
 const fullScanMs = 60000;
@@ -188,9 +189,7 @@ class Tasks {
     if (task.enabled || task.rt.running) throw new Error('请先暂停任务，再修改配置。');
     const rebound = task.hold && task.identity && (await engine.verifyRoots(config).catch(() => null))
       ?.some((root, index) => root.identity !== task.identity[index]);
-    const changed = rebound || task.config.mode !== config.mode || task.config.source !== config.source || task.config.target !== config.target ||
-      JSON.stringify(task.config.excludeFiles) !== JSON.stringify(config.excludeFiles) ||
-      JSON.stringify(task.config.excludeDirs) !== JSON.stringify(config.excludeDirs);
+    const changed = rebound || task.config.mode !== config.mode || task.config.source !== config.source || task.config.target !== config.target;
     if (changed) {
       if (task.config.mode === 'two' || config.mode === 'two') await this.atomic(this.baselinePath(task), []);
       task.identity = undefined;
@@ -389,9 +388,11 @@ class Tasks {
       else {
         const current = preview ? null : await engine.verifyRoots(config, task.identity).catch(cause => cause);
         hold = error.offline ? error.message : current?.offline ? current.message : '';
-        Object.assign(run, { state: 'error', error: error.message });
-        if (!preview && !hold && rt.error !== error.message) this.notify?.('同步失败 · ' + config.name, error.message);
-        if (!preview) rt.error = error.message;
+        const diagnosis = error.robocopy ? await readFailure(logPath, error.exitCode).catch(() => null) : null;
+        const explanation = diagnosis?.summary || error.message;
+        Object.assign(run, { state: 'error', error: explanation, code: error.exitCode, diagnosis });
+        if (!preview && !hold && rt.error !== explanation) this.notify?.('同步失败 · ' + config.name, explanation);
+        if (!preview) rt.error = explanation;
       }
     } finally {
       if (!preview && config.mode === 'two' && rt.baseline) {

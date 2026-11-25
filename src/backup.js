@@ -54,6 +54,30 @@ function exclusions(value) {
   });
 }
 
+function extensions(value) {
+  const input = Array.isArray(value) ? value.join(',') : String(value ?? '');
+  const entries = input.split(/[,，;；\s]+/).filter(Boolean)
+    .map(item => item.toLowerCase().replace(/^(?:\*\.|\.)/, ''));
+  if (entries.some(item => item.length > 64 || !/^[a-z0-9][a-z0-9_+-]*(?:\.[a-z0-9][a-z0-9_+-]*)*$/.test(item))) {
+    throw new Error('文件扩展名格式不正确，请输入 jpg、tmp 或 tar.gz 等值。');
+  }
+  return [...new Set(entries)];
+}
+
+function effectiveExclusions(config) {
+  const files = [...config.excludeFiles, ...(config.excludeExtensions || []).map(item => '*.' + item)];
+  const directories = [...config.excludeDirs];
+  if (config.excludeMetadata) {
+    files.push('.DS_Store', '._*', 'Thumbs.db', 'desktop.ini');
+    directories.push('__MACOSX');
+  }
+  if (config.excludeDotEntries) {
+    files.push('.*');
+    directories.push('.*');
+  }
+  return { files: [...new Set(files)], directories: [...new Set(directories)] };
+}
+
 async function validate(form) {
   const config = {
     name: String(form.name ?? '').trim().slice(0, 100),
@@ -62,6 +86,9 @@ async function validate(form) {
     resume: form.resume !== false,
     excludeFiles: exclusions(form.excludeFiles),
     excludeDirs: exclusions(form.excludeDirs),
+    excludeMetadata: form.excludeMetadata === true,
+    excludeDotEntries: form.excludeDotEntries === true,
+    excludeExtensions: extensions(form.excludeExtensions),
     speed: String(form.speed ?? 'normal'),
   };
   if (!['normal', 'low'].includes(config.speed)) throw new Error('复制速度选项无效。');
@@ -77,8 +104,9 @@ function copyArguments(config, preview, logPath) {
   const args = [config.source, config.target, '/E', '/XO', '/XJ', '/XX', '/R:2', '/W:3', '/BYTES', '/FP', '/NDL'];
   if (config.resume) args.push('/Z');
   if (config.speed === 'low') args.push('/IPG:25');
-  if (config.excludeFiles.length) args.push('/XF', ...config.excludeFiles);
-  if (config.excludeDirs.length) args.push('/XD', ...config.excludeDirs);
+  const { files, directories } = effectiveExclusions(config);
+  if (files.length) args.push('/XF', ...files);
+  if (directories.length) args.push('/XD', ...directories);
   if (preview) args.push('/L', '/NP');
   return [...args, '/UNILOG:' + logPath];
 }
@@ -202,4 +230,4 @@ async function tailLog(logPath, { unicode = true, since = 0, locale = '' } = {})
   }
 }
 
-module.exports = { robocopy, validate, canonicalFolder, folderKey, overlaps, copyArguments, launch, scanProcesses, stopExternal, tailLog };
+module.exports = { robocopy, validate, canonicalFolder, folderKey, overlaps, effectiveExclusions, copyArguments, launch, scanProcesses, stopExternal, tailLog };

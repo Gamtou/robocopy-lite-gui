@@ -46,6 +46,12 @@ button:disabled { opacity: .55; cursor: default; }
 .task-progress progress { display: block; width: 100%; height: 10px; margin: 4px 0; accent-color: #2258d1; }
 .current-file { margin: 6px 0 2px; color: #233759; font-size: 12px; overflow-wrap: anywhere; }
 .task-progress .file-progress { height: 6px; accent-color: #16815b; }
+.progress-timing { margin-top: 7px; color: #314967; font-size: 12px; }
+.extension-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.extension-tags button { padding: 4px 8px; }
+.diagnosis { display: grid; gap: 8px; margin-bottom: 10px; }
+.diagnosis-group { border: 1px solid #dce7f5; border-radius: 8px; padding: 9px 10px; overflow-wrap: anywhere; }
+.diagnosis-group ul { margin: 6px 0; padding-left: 18px; font-size: 12px; }
 .log-filters { display: flex; align-items: end; flex-wrap: wrap; gap: 10px; margin-bottom: 19px; }
 .log-filters label { display: grid; gap: 5px; min-width: 125px; }
 .log-filters label:nth-child(3) { flex: 1; min-width: 160px; }

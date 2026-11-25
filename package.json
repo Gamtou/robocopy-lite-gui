@@ -1,12 +1,12 @@
 {
   "name": "robocopy-lite-gui",
-  "version": "0.4.1",
+  "version": "0.5.1",
   "private": true,
   "description": "Windows 持续同步和 Robocopy 备份任务面板",
-  "main": "main.js",
+  "main": "src/main.js",
   "scripts": {
     "start": "electron .",
-    "check": "node --check backup.js && node --check progress.js && node --check sync-engine.js && node --check tasks.js && node --check main.js && node --check preload.js && node --check renderer.js && node --check log-page.js",
+    "check": "node --check src/backup.js && node --check src/diagnostics.js && node --check src/progress.js && node --check src/sync-engine.js && node --check src/tasks.js && node --check src/main.js && node --check src/preload.js && node --check src/renderer.js && node --check src/log-page.js",
     "build:win": "electron-builder --win portable --x64"
   },
   "devDependencies": {
@@ -19,22 +19,12 @@
     "artifactName": "Robocopy Lite ${version}.exe",
     "electronDist": "node_modules/electron/dist",
     "files": [
-      "backup.js",
-      "progress.js",
-      "sync-engine.js",
-      "tasks.js",
-      "main.js",
-      "preload.js",
-      "renderer.js",
-      "log-page.js",
-      "index.html",
-      "styles.css",
-      "sync.ico",
-      "sync.png",
+      "src/**/*",
+      "assets/**/*",
       "THIRD-PARTY-NOTICES.md"
     ],
     "win": {
-      "icon": "sync.ico",
+      "icon": "assets/sync.ico",
       "target": "portable"
     }
   }

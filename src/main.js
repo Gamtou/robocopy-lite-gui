@@ -4,6 +4,7 @@ const { app, BrowserWindow, dialog, ipcMain, Menu, Tray, Notification, shell } =
 const path = require('node:path');
 const backup = require('./backup');
 const { externalProgress } = require('./progress');
+const { readFailure } = require('./diagnostics');
 const Tasks = require('./tasks');
 
 app.setName('Robocopy Lite');
@@ -28,7 +29,7 @@ function launch() {
   let scanTimer;
   let logTimer;
   let operations = Promise.resolve();
-  const icon = path.join(__dirname, 'sync.ico');
+  const icon = path.join(__dirname, '../assets/sync.ico');
 
   function refreshExternal() {
     if (scanning) return scanning;
@@ -167,7 +168,7 @@ function launch() {
       return {
         tasks: [...tasks.tasks.values()].map(task => tasks.view(task)),
         external: [...external.values()].filter(job => !own.has(job.pid)).slice(0, 30),
-        scanState, settings: tasks.settings, storageError: tasks.storageError,
+        version: app.getVersion(), scanState, settings: tasks.settings, storageError: tasks.storageError,
       };
     });
     ipcMain.handle('choose-folder', async () => {
@@ -193,6 +194,14 @@ function launch() {
       if (job && !ownedPids().has(job.pid)) return readExternalLog(job);
       if (typeof id !== 'string' || !/^[0-9a-f-]{36}$/i.test(id) || !tasks.hasLog(id)) return '';
       return backup.tailLog(path.join(tasks.logs, id + '.log'));
+    });
+    ipcMain.handle('diagnostic-report', (_event, id) => {
+      if (typeof id !== 'string' || !/^[0-9a-f-]{36}$/i.test(id) || !tasks.hasLog(id)) return null;
+      const record = tasks.journal.find(item => item.id === id) ||
+        [...tasks.tasks.values()].flatMap(task => task.history).find(item => item.id === id);
+      if (record?.state !== 'error') return null;
+      const oldCode = record.error?.match(/退出码[：:\s]+(\d+)/)?.[1];
+      return record.diagnosis || readFailure(path.join(tasks.logs, id + '.log'), record.code ?? (oldCode ? Number(oldCode) : undefined));
     });
     ipcMain.handle('open-logs-folder', () => shell.openPath(tasks.logs));
     bind('configure', (id, form) => tasks.configure(id, form));

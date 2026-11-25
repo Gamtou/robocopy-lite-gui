@@ -12,8 +12,8 @@
 <body>
   <main>
     <header class="hero">
-      <img class="hero-icon" src="sync.png" alt="">
-      <div class="heading"><p>ROBOCOPY LITE</p><h1 id="page-title">同步任务</h1></div>
+      <img class="hero-icon" src="../assets/sync.png" alt="">
+      <div class="heading"><p>ROBOCOPY LITE <span id="app-version"></span></p><h1 id="page-title">同步任务</h1></div>
       <button id="tasks-button" type="button" hidden>返回任务</button>
       <button id="logs-button" type="button">日志</button>
       <button id="settings-button" type="button">设置</button>
@@ -48,6 +48,7 @@
           <div id="log-paths"></div>
           <p id="log-last-file" class="hint log-path" hidden></p>
           <p id="log-error" class="notice" hidden></p>
+          <div id="log-diagnosis" class="diagnosis" hidden></div>
           <pre id="log-output" class="diagnostic-output" tabindex="0" hidden></pre>
         </article>
       </div>
@@ -77,6 +78,18 @@
           <div class="advanced">
             <label class="check"><input name="resume" type="checkbox" checked> 启用 Robocopy 断点续传</label>
             <label>复制速度<select name="speed"><option value="normal">正常</option><option value="low">降低速度</option></select></label>
+          </div>
+        </details>
+        <details id="exclusion-rules">
+          <summary>规则设置 · 跳过文件和文件夹</summary>
+          <div class="advanced">
+            <label class="check"><input name="excludeMetadata" type="checkbox"> 跳过常见系统杂项</label>
+            <p class="hint">包括 .DS_Store、._*、Thumbs.db、desktop.ini 和 __MACOSX。</p>
+            <label class="check"><input name="excludeDotEntries" type="checkbox"> 跳过以「.」开头的文件和文件夹</label>
+            <p class="hint">也会跳过 .git、.env 等。只想过滤系统杂项时，勾选上一项即可。</p>
+            <label>排除文件扩展名<input name="excludeExtensions" placeholder="例如 lnk, pst, swp" spellcheck="false"></label>
+            <div id="extension-tags" class="extension-tags" hidden></div>
+            <p class="hint">支持逗号或空格分隔。规则只影响此任务的后续同步。</p>
             <label>排除文件<textarea name="excludeFiles" rows="2" placeholder="每行一条，例如 *.tmp"></textarea></label>
             <label>排除文件夹<textarea name="excludeDirs" rows="2" placeholder="每行一条，例如 cache"></textarea></label>
           </div>

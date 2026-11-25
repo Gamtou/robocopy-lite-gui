@@ -84,12 +84,34 @@ function monitorLog(file, offset, consume) {
   };
 }
 
+function rateTracker() {
+  let at = Date.now();
+  let last = 0;
+  let speed;
+  let latest;
+  return bytes => {
+    const now = Date.now();
+    if (bytes < last) {
+      at = now;
+      last = bytes;
+      speed = latest = undefined;
+    } else if (now - at >= 700 && bytes > last) {
+      const measured = (bytes - last) * 1000 / (now - at);
+      speed = speed ? speed * 0.65 + measured * 0.35 : measured;
+      latest = at = now;
+      last = bytes;
+    }
+    return { speed, speedAt: latest };
+  };
+}
+
 function singleReporter(plan, source, report) {
   const prefix = path.resolve(source).replace(/\\+$/, '').toLowerCase() + '\\';
   let current;
   let currentPercent = null;
   let bytesDone = 0;
   let filesDone = 0;
+  const rate = rateTracker();
   return line => {
     const entry = logEntry(line);
     if (!entry) return;
@@ -105,15 +127,18 @@ function singleReporter(plan, source, report) {
       currentPercent = entry.percent;
     }
     if (!current) return;
-    const transferred = bytesDone + current.bytes * (currentPercent ?? 0) / 100;
+    const fileTransferred = current.bytes * (currentPercent ?? 0) / 100;
+    const transferred = bytesDone + fileTransferred;
     const processed = filesDone + (currentPercent === 100 ? 1 : 0);
     const ratio = plan?.bytes > 0 ? transferred / plan.bytes : plan?.count > 0 ? processed / plan.count : null;
     report({
       stage: 'copying',
       file: current.file,
       filePercent: currentPercent,
+      fileBytes: current.bytes,
+      fileTransferred,
       overall: ratio === null ? null : Math.min(99.9, ratio * 100),
-      transferred, totalBytes: plan?.bytes,
+      transferred, totalBytes: plan?.bytes, processed, totalFiles: plan?.count, ...rate(transferred),
     });
   };
 }
@@ -137,4 +162,4 @@ function externalProgress(text) {
   return { stage: 'external', file, filePercent };
 }
 
-module.exports = { logEntry, scanPlan, monitorLog, singleReporter, externalProgress };
+module.exports = { logEntry, scanPlan, monitorLog, singleReporter, externalProgress, rateTracker };

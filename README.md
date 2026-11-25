@@ -4,7 +4,7 @@ Windows 桌面同步与备份工具。用任务列表配置和监测备份，底
 
 ## 下载与使用
 
-从 [GitHub Releases](https://github.com/Gamtou/robocopy-lite-gui/releases/latest) 下载 Windows x64 便携版 EXE，双击打开。新建任务后，选择两个文件夹和同步模式，再点击「保存并开始」。关闭窗口时默认缩到系统托盘。从托盘选择「退出」可停止本应用的后台同步。
+从 [GitHub Releases](https://github.com/Gamtou/robocopy-lite-gui/releases/latest) 下载 Windows x64 便携版 EXE，双击打开。任务页和日志页左上方都能看到当前版本号。新建任务后，选择两个文件夹和同步模式，再点击「保存并开始」。关闭窗口时默认缩到系统托盘。从托盘选择「退出」可停止本应用的后台同步。
 
 - **单向累计备份**将来源的新文件和更新复制到目标，保留目标独有文件。
 - **双向同步**监测两边的变动，遇到同名文件冲突时保留原件，等待选择处理方式。
@@ -27,4 +27,10 @@ npm.cmd run build:win
 
 便携 EXE 位于 `dist/`。Windows 自带的 Robocopy 用于执行实际文件复制。
 
-[产品方案](产品方案.md) · [技术方案](技术方案.md) · [第三方图形授权](THIRD-PARTY-NOTICES.md)
+## 项目目录
+
+- `src/` 存放界面、任务管理和同步逻辑。
+- `assets/` 存放应用图标。
+- `docs/` 存放产品与技术方案。
+
+[产品方案](docs/产品方案.md) · [技术方案](docs/技术方案.md) · [第三方图形授权](THIRD-PARTY-NOTICES.md)

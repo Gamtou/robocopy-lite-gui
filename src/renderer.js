@@ -75,10 +75,11 @@ function progressPanel(id) {
   const bar = element('progress');
   const file = element('p', '', 'current-file');
   const fileBar = element('progress', '', 'file-progress');
+  const timing = element('p', '', 'progress-timing');
   heading.append(title, metric);
-  panel.append(heading, bar, file, fileBar);
+  panel.append(heading, bar, file, fileBar, timing);
   panel.hidden = true;
-  progressViews.set(id, { panel, title, metric, bar, file, fileBar, previous: '' });
+  progressViews.set(id, { panel, title, metric, bar, file, fileBar, timing, previous: '' });
   return panel;
 }
 
@@ -99,15 +100,25 @@ function readableBytes(value) {
   return value.toLocaleString('zh-CN', { maximumFractionDigits: 1 }) + ' ' + units[i];
 }
 
-function showProgress(id, progress, isExternal = false) {
+function duration(seconds) {
+  const whole = Math.max(0, Math.ceil(seconds));
+  if (whole < 60) return whole + ' 秒';
+  const minutes = Math.floor(whole / 60);
+  return minutes < 60 ? minutes + ' 分 ' + whole % 60 + ' 秒' :
+    Math.floor(minutes / 60) + ' 小时 ' + minutes % 60 + ' 分';
+}
+
+function showProgress(id, progress, isExternal = false, started) {
   const view = progressViews.get(id);
   if (!view) return;
-  const key = JSON.stringify(progress ?? null);
+  const elapsed = progress && started ? Math.max(0, Math.floor((Date.now() - started) / 1000)) : undefined;
+  const key = JSON.stringify([progress, elapsed]);
   if (key === view.previous) return;
   view.previous = key;
   view.panel.hidden = !progress;
   if (!progress) return;
-  const { stage, file, filePercent, overall, transferred, totalBytes, handled, total } = progress;
+  const { stage, file, filePercent, overall, transferred, totalBytes, handled, total,
+    fileBytes, fileTransferred, totalFiles, processed, speed, speedAt } = progress;
   const phase = {
     scanning: '正在扫描待同步文件',
     preview: '正在预览',
@@ -121,17 +132,29 @@ function showProgress(id, progress, isExternal = false) {
   const name = isExternal ? phase[stage] : Number.isFinite(total) && total > 0 ? '本轮处理项' :
     Number.isFinite(overall) ? '整轮备份进度（估算）' : phase[stage];
   view.title.textContent = name || '';
-  const percent = Number.isFinite(value) ? Math.floor(value) + '%' : '';
+  const percent = Number.isFinite(value) ? value.toFixed(1) + '%' : '';
   const units = total > 0 ? handled + ' / ' + total + ' 项' : totalBytes > 0 && Number.isFinite(transferred) ?
     readableBytes(transferred) + ' / ' + readableBytes(totalBytes) : '';
-  view.metric.textContent = [percent, units].filter(Boolean).join(' · ');
+  const fileCount = totalFiles > 0 ? Math.min(processed ?? 0, totalFiles) + ' / ' + totalFiles + ' 个文件' : '';
+  view.metric.textContent = [percent, units, fileCount].filter(Boolean).join(' · ');
   view.bar.hidden = stage === 'unavailable';
   meter(view.bar, name || '备份进度', value);
   view.file.hidden = !file;
-  view.file.textContent = file ? (isExternal ? '日志报告的文件 · ' : '当前文件 · ') + file +
-    (!isExternal && Number.isFinite(filePercent) ? ' · ' + Math.floor(filePercent) + '%' : '') : '';
+  const fileSize = fileBytes > 0 && Number.isFinite(fileTransferred) ?
+    readableBytes(fileTransferred) + ' / ' + readableBytes(fileBytes) : '';
+  const fileState = file ? [file, !isExternal && Number.isFinite(filePercent) ? filePercent.toFixed(1) + '%' : '', fileSize] : [];
+  view.file.textContent = file ? (isExternal ? '日志报告的文件 · ' : '当前文件 · ') + fileState.filter(Boolean).join(' · ') : '';
   view.fileBar.hidden = isExternal || !file || !Number.isFinite(filePercent);
   meter(view.fileBar, '当前文件进度', filePercent);
+  const timing = elapsed === undefined ? [] : ['已用时 ' + duration(elapsed)];
+  if (stage === 'copying' && speed > 0 && Date.now() - speedAt < 6500) {
+    timing.push(readableBytes(speed) + '/s');
+    const fileOnly = total > 0 || !totalBytes;
+    const remaining = fileOnly ? fileBytes - fileTransferred : totalBytes - transferred;
+    if (remaining > 0) timing.push((fileOnly ? '当前文件预计剩余 ' : '预计剩余 ') + duration(remaining / speed));
+  }
+  view.timing.hidden = !timing.length;
+  view.timing.textContent = timing.join(' · ');
 }
 
 async function action(callback, errorId = 'global-error') {
@@ -170,6 +193,23 @@ function updatePathNote() {
     editing?.hold?.includes('位置已变化') ? '保存会重新绑定这两个文件夹，请核对盘符对应的位置。' : '');
 }
 
+function updateExtensionTags() {
+  const input = form.elements.excludeExtensions;
+  const container = $('extension-tags');
+  const values = input.value.split(/[,，;；\s]+/).filter(Boolean);
+  const tokens = new Map(values.map(value => [value.toLowerCase().replace(/^(?:\*\.|\.)/, ''), value]));
+  container.hidden = !tokens.size;
+  container.replaceChildren(...[...tokens].map(([extension]) => {
+    const tag = button(extension + ' ×', () => {
+      input.value = values.filter(value => value.toLowerCase().replace(/^(?:\*\.|\.)/, '') !== extension).join(', ');
+      updateExtensionTags();
+      input.focus();
+    });
+    tag.setAttribute('aria-label', '移除排除规则 ' + extension);
+    return tag;
+  }));
+}
+
 function openForm(task = null, job = null) {
   editing = task;
   takingOver = job;
@@ -179,9 +219,16 @@ function openForm(task = null, job = null) {
     source: config.source || '', target: config.target || '', name: config.name || '', mode: config.mode || 'one',
     speed: config.speed || 'normal', excludeFiles: config.excludeFiles?.join('\n') || '',
     excludeDirs: config.excludeDirs?.join('\n') || '',
+    excludeExtensions: config.excludeExtensions?.join(', ') || '',
   };
   for (const [key, value] of Object.entries(entries)) form.elements[key].value = value;
   form.elements.resume.checked = config.resume !== false;
+  form.elements.excludeMetadata.checked = config.excludeMetadata === true;
+  form.elements.excludeDotEntries.checked = config.excludeDotEntries === true;
+  const hasRules = config.excludeMetadata || config.excludeDotEntries || config.excludeExtensions?.length ||
+    config.excludeFiles?.length || config.excludeDirs?.length;
+  $('exclusion-rules').open = Boolean(hasRules);
+  updateExtensionTags();
   $('form-title').textContent = job ? '接管外部任务' : task ? '编辑任务' : '新建任务';
   $('save-start').hidden = Boolean(task || job);
   $('save-only').textContent = job ? '接管并保存' : '保存';
@@ -197,7 +244,8 @@ function openForm(task = null, job = null) {
 
 async function saveTask(startNow) {
   if (!form.reportValidity() || runningAction) return;
-  const config = { ...Object.fromEntries(new FormData(form)), resume: form.elements.resume.checked };
+  const config = { ...Object.fromEntries(new FormData(form)), resume: form.elements.resume.checked,
+    excludeMetadata: form.elements.excludeMetadata.checked, excludeDotEntries: form.elements.excludeDotEntries.checked };
   const done = await action(async () => {
     const id = takingOver ? await api.adoptExternal(takingOver.id, config) :
       await api.configure(editing?.id ?? null, config);
@@ -287,10 +335,10 @@ function render() {
     const scanMessages = { checking: '正在检查系统任务…', unavailable: '目前无法检查其他程序启动的 Robocopy。' };
     message('scan-status', scanMessages[data.scanState]);
   }
-  for (const task of data.tasks) showProgress(task.id, task.progress);
+  for (const task of data.tasks) showProgress(task.id, task.progress, false, task.started);
   for (const job of data.external) {
     const state = job.ended ? null : job.progress || { stage: job.logPath ? 'external' : 'unavailable' };
-    showProgress(job.id, state, true);
+    showProgress(job.id, state, true, job.started);
   }
 }
 
@@ -378,6 +426,7 @@ async function renderDetail() {
 async function refresh() {
   try {
     data = await api.snapshot();
+    $('app-version').textContent = `v${data.version}`;
     render();
     await renderDetail();
   } catch (error) {
@@ -401,6 +450,7 @@ form.addEventListener('input', () => {
   updateMode();
   updatePathNote();
 });
+form.elements.excludeExtensions.addEventListener('input', updateExtensionTags);
 for (const control of document.querySelectorAll('[data-browse]')) {
   control.addEventListener('click', async () => {
     try {
